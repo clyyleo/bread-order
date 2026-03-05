@@ -88,6 +88,11 @@ h1 { font-size: 1.3em; text-align: center; padding: 12px 0 4px; }
 
 <h1>三明治店面包订货系统</h1>
 <div class="date-display" id="dateDisplay"></div>
+<div style="text-align:center;margin-bottom:12px;">
+  <label style="font-size:0.9em;color:#666;">选择日期：</label>
+  <input type="date" id="datePicker" style="padding:4px 8px;border:1px solid #ddd;border-radius:6px;font-size:0.9em;" onchange="updateDateDisplay()">
+  <button onclick="resetToToday()" style="padding:4px 10px;border:1px solid #ddd;border-radius:6px;font-size:0.85em;background:#f0f0f0;cursor:pointer;margin-left:4px;">今天</button>
+</div>
 
 <!-- Inventory Input -->
 <div class="section">
@@ -769,8 +774,8 @@ function renderMessage(title, text, id) {
 // ============================================================
 function calculate() {
   const stock = getStock();
-  const now = new Date();
-  const tomorrow = new Date(now);
+  const selected = getSelectedDate();
+  const tomorrow = new Date(selected);
   tomorrow.setDate(tomorrow.getDate() + 1);
   const tomorrowDay = tomorrow.getDay(); // 0=Sun..6=Sat
 
@@ -850,12 +855,23 @@ function copyMsg(id, btn) {
   });
 }
 
-// Init date display
-(function() {
-  const now = new Date();
-  const tomorrow = new Date(now);
+// Date management
+function getSelectedDate() {
+  const val = document.getElementById('datePicker').value;
+  if (val) return new Date(val + 'T00:00:00');
+  return new Date();
+}
+
+function updateDateDisplay() {
+  const selected = getSelectedDate();
+  const tomorrow = new Date(selected);
   tomorrow.setDate(tomorrow.getDate() + 1);
-  const todayStr = `${now.getFullYear()}/${now.getMonth()+1}/${now.getDate()} ${DAYS_CN[now.getDay()]}`;
+
+  const pad = n => n < 10 ? '0' + n : n;
+  const now = new Date();
+  const timeStr = `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+
+  const selectedStr = `${selected.getFullYear()}/${selected.getMonth()+1}/${selected.getDate()} ${DAYS_CN[selected.getDay()]}`;
   const tomorrowStr = `${tomorrow.getMonth()+1}/${tomorrow.getDate()} ${DAYS_CN[tomorrow.getDay()]}`;
 
   const tomorrowDay = tomorrow.getDay();
@@ -868,7 +884,23 @@ function copyMsg(id, btn) {
   else deliveryInfo += '无送货';
 
   document.getElementById('dateDisplay').innerHTML =
-    `今天: ${todayStr} | 明天: ${tomorrowStr}<br><span style="color:#4a90d9">${deliveryInfo}</span>`;
+    `今天: ${selectedStr} ${timeStr} | 明天: ${tomorrowStr}<br><span style="color:#4a90d9">${deliveryInfo}</span>`;
+}
+
+function resetToToday() {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = (now.getMonth()+1).toString().padStart(2,'0');
+  const d = now.getDate().toString().padStart(2,'0');
+  document.getElementById('datePicker').value = `${y}-${m}-${d}`;
+  updateDateDisplay();
+}
+
+// Init
+(function() {
+  resetToToday();
+  // Update time every second
+  setInterval(() => updateDateDisplay(), 1000);
 })();
 </script>
 
