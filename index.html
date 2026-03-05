@@ -1,0 +1,876 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>三明治店面包订货系统</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f5f5f5; color: #333; padding: 12px; max-width: 800px; margin: 0 auto; }
+h1 { font-size: 1.3em; text-align: center; padding: 12px 0 4px; }
+.date-display { text-align: center; color: #666; font-size: 0.95em; margin-bottom: 16px; }
+
+/* Section cards */
+.section { background: #fff; border-radius: 10px; padding: 16px; margin-bottom: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+.section h2 { font-size: 1.05em; margin-bottom: 12px; color: #444; }
+
+/* Inventory inputs */
+.inv-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.inv-item { display: flex; align-items: center; gap: 8px; }
+.inv-item label { flex: 1; font-size: 0.9em; white-space: nowrap; }
+.inv-item input { width: 70px; padding: 6px 8px; border: 1px solid #ddd; border-radius: 6px; font-size: 0.95em; text-align: center; }
+.inv-item input:focus { outline: none; border-color: #4a90d9; box-shadow: 0 0 0 2px rgba(74,144,217,0.2); }
+
+/* Paste area */
+.paste-area { margin-top: 12px; }
+.paste-area textarea { width: 100%; height: 80px; padding: 8px; border: 1px solid #ddd; border-radius: 6px; font-size: 0.9em; resize: vertical; }
+.paste-area textarea::placeholder { color: #aaa; }
+
+/* Buttons */
+.btn { display: block; width: 100%; padding: 12px; border: none; border-radius: 8px; font-size: 1em; font-weight: 600; cursor: pointer; margin-top: 12px; }
+.btn-primary { background: #4a90d9; color: #fff; }
+.btn-primary:hover { background: #3a7bc8; }
+.btn-parse { background: #e8e8e8; color: #555; font-size: 0.85em; padding: 8px; }
+.btn-parse:hover { background: #ddd; }
+.btn-copy { background: #f0f0f0; color: #333; padding: 8px 16px; font-size: 0.85em; border: 1px solid #ddd; border-radius: 6px; cursor: pointer; display: inline-block; margin-top: 8px; }
+.btn-copy:hover { background: #e0e0e0; }
+.btn-copy.copied { background: #4caf50; color: #fff; border-color: #4caf50; }
+
+/* Standing order toggle */
+.toggle-header { cursor: pointer; display: flex; justify-content: space-between; align-items: center; }
+.toggle-header .arrow { transition: transform 0.2s; }
+.toggle-header.open .arrow { transform: rotate(90deg); }
+.toggle-content { display: none; margin-top: 12px; }
+.toggle-content.show { display: block; }
+.so-table { width: 100%; border-collapse: collapse; font-size: 0.85em; }
+.so-table th, .so-table td { padding: 6px 8px; border: 1px solid #e0e0e0; text-align: center; }
+.so-table th { background: #f8f8f8; font-weight: 600; }
+.so-table .total-row { background: #f0f7ff; font-weight: 600; }
+
+/* Results */
+#results { display: none; }
+.supplier-card { border: 1px solid #e0e0e0; border-radius: 8px; padding: 12px; margin-bottom: 10px; }
+.supplier-card.status-ok { border-left: 4px solid #4caf50; }
+.supplier-card.status-warn { border-left: 4px solid #ff9800; }
+.supplier-card.status-danger { border-left: 4px solid #f44336; }
+.supplier-card.status-skip { border-left: 4px solid #9e9e9e; }
+.supplier-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+.supplier-name { font-weight: 600; font-size: 0.95em; }
+.status-badge { padding: 2px 10px; border-radius: 12px; font-size: 0.8em; font-weight: 600; }
+.badge-ok { background: #e8f5e9; color: #2e7d32; }
+.badge-warn { background: #fff3e0; color: #e65100; }
+.badge-danger { background: #ffebee; color: #c62828; }
+.badge-skip { background: #f5f5f5; color: #757575; }
+.order-details { font-size: 0.9em; line-height: 1.6; }
+.order-details .label { color: #888; }
+.order-details .highlight { color: #d32f2f; font-weight: 600; }
+.order-details .ok-text { color: #2e7d32; }
+
+/* Messages */
+#messages { display: none; }
+.msg-block { background: #f9f9f9; border: 1px solid #e0e0e0; border-radius: 8px; padding: 12px; margin-bottom: 10px; }
+.msg-block h3 { font-size: 0.9em; color: #555; margin-bottom: 8px; }
+.msg-text { font-family: monospace; font-size: 0.85em; white-space: pre-wrap; background: #fff; padding: 10px; border-radius: 6px; border: 1px solid #eee; line-height: 1.5; }
+.no-changes { text-align: center; color: #4caf50; font-size: 1em; padding: 20px; }
+
+/* Substitution alert */
+.sub-alert { background: #fff8e1; border: 1px solid #ffcc02; border-radius: 8px; padding: 12px; margin-bottom: 10px; font-size: 0.9em; }
+.sub-alert strong { color: #f57f17; }
+
+/* Responsive */
+@media (max-width: 480px) {
+  .inv-grid { grid-template-columns: 1fr; }
+  body { padding: 8px; }
+}
+</style>
+</head>
+<body>
+
+<h1>三明治店面包订货系统</h1>
+<div class="date-display" id="dateDisplay"></div>
+
+<!-- Inventory Input -->
+<div class="section">
+  <h2>当前剩余库存</h2>
+  <div class="inv-grid">
+    <div class="inv-item"><label>Turkish Roll</label><input type="number" id="stock_tr" min="0" placeholder="0"></div>
+    <div class="inv-item"><label>Focaccia</label><input type="number" id="stock_foc" min="0" placeholder="0"></div>
+    <div class="inv-item"><label>White</label><input type="number" id="stock_white" min="0" placeholder="0"></div>
+    <div class="inv-item"><label>Wholemeal</label><input type="number" id="stock_wm" min="0" placeholder="0"></div>
+    <div class="inv-item"><label>Multi Grain</label><input type="number" id="stock_mg" min="0" placeholder="0"></div>
+    <div class="inv-item"><label>Panini</label><input type="number" id="stock_pan" min="0" placeholder="0"></div>
+    <div class="inv-item"><label>Baguette</label><input type="number" id="stock_bag" min="0" placeholder="0"></div>
+  </div>
+  <div class="paste-area">
+    <textarea id="pasteInput" placeholder="或在此粘贴库存文本，例如：&#10;TR 15, Focaccia 8, White 3, WM 2, MG 1, Panini 4, Baguette 10"></textarea>
+    <button class="btn btn-parse" onclick="parseInventory()">识别粘贴内容</button>
+  </div>
+  <button class="btn btn-primary" onclick="calculate()">检查库存 & 计算订单</button>
+</div>
+
+<!-- Standing Order Reference -->
+<div class="section">
+  <div class="toggle-header" onclick="toggleSO(this)">
+    <h2 style="margin:0">Standing Order 参考表</h2>
+    <span class="arrow">▶</span>
+  </div>
+  <div class="toggle-content" id="soContent">
+    <p style="font-size:0.85em;color:#888;margin-bottom:8px;">供应商A: 周一/二/四/六送货 | 供应商B(YVE)+C: 周一/三/五送货</p>
+    <table class="so-table">
+      <tr><th>送货日</th><th>供应商A<br>TR(袋)</th><th colspan="4">供应商B - YVE</th><th colspan="2">供应商C</th></tr>
+      <tr><th></th><th>TR</th><th>Foc</th><th>White</th><th>WM</th><th>MG</th><th>Panini</th><th>Baguette</th></tr>
+      <tr><td>周一</td><td>11</td><td>16</td><td>4</td><td>1</td><td>1</td><td>5</td><td>15</td></tr>
+      <tr><td>周二</td><td>15</td><td>-</td><td>-</td><td>-</td><td>-</td><td>-</td><td>-</td></tr>
+      <tr><td>周三</td><td>-</td><td>23</td><td>4</td><td>1</td><td>0</td><td>5</td><td>15</td></tr>
+      <tr><td>周四</td><td>18</td><td>-</td><td>-</td><td>-</td><td>-</td><td>-</td><td>-</td></tr>
+      <tr><td>周五</td><td>-</td><td>25</td><td>6</td><td>1</td><td>1</td><td>7</td><td>20</td></tr>
+      <tr><td>周六</td><td>16</td><td>-</td><td>-</td><td>-</td><td>-</td><td>-</td><td>-</td></tr>
+      <tr class="total-row"><td>周合计</td><td>60袋</td><td>64</td><td>14</td><td>3</td><td>2</td><td>17</td><td>50</td></tr>
+      <tr class="total-row"><td>周金额</td><td>$210</td><td colspan="4">$171.60</td><td colspan="2">$129.65</td></tr>
+    </table>
+  </div>
+</div>
+
+<!-- Results -->
+<div id="results" class="section">
+  <h2>订单调整建议</h2>
+  <div id="resultsContent"></div>
+</div>
+
+<!-- Messages -->
+<div id="messages" class="section">
+  <h2>供应商通知消息</h2>
+  <div id="messagesContent"></div>
+</div>
+
+<script>
+// ============================================================
+// CONFIG
+// ============================================================
+const DAYS_CN = ['周日','周一','周二','周三','周四','周五','周六'];
+const DAYS_EN = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+
+const DAILY_USAGE = {
+  tr: 35, foc: 10, white: 2, wm: 1, mg: 0.5, pan: 2.5, bag: 8
+};
+
+const SAFETY = { tr: 5, foc: 3, white: 1, wm: 1, mg: 1, pan: 1, bag: 2 };
+
+// Standing orders indexed by delivery day (0=Sun ... 6=Sat)
+// Supplier A: delivers Mon(1), Tue(2), Thu(4), Sat(6)
+const SO_A = {
+  1: { tr: 11 },  // Monday: 11 bags
+  2: { tr: 15 },  // Tuesday: 15 bags
+  4: { tr: 18 },  // Thursday: 18 bags
+  6: { tr: 16 },  // Saturday: 16 bags
+};
+
+// Supplier B (YVE): delivers Mon(1), Wed(3), Fri(5)
+const SO_B = {
+  1: { foc: 16, white: 4, wm: 1, mg: 1 },
+  3: { foc: 23, white: 4, wm: 1, mg: 0 },
+  5: { foc: 25, white: 6, wm: 1, mg: 1 },
+};
+
+// Supplier C: delivers Mon(1), Wed(3), Fri(5)
+const SO_C = {
+  1: { pan: 5, bag: 15 },
+  3: { pan: 5, bag: 15 },
+  5: { pan: 7, bag: 20 },
+};
+
+const PRICES = {
+  tr_bag: 3.50, foc: 0.90, white: 6.00, wm: 6.00, mg: 6.00, pan: 3.45, bag: 1.42
+};
+
+const MIN_ORDER = { A: { type: 'bags', value: 11 }, B: { type: 'value', value: 50 }, C: { type: 'value', value: 30 } };
+
+const PRODUCT_LABELS = {
+  tr: 'Turkish Roll', foc: 'Focaccia', white: 'White', wm: 'Wholemeal', mg: 'Multi Grain', pan: 'Panini', bag: 'Baguette'
+};
+
+// ============================================================
+// INVENTORY PARSER
+// ============================================================
+const ALIASES = [
+  { key: 'tr', patterns: [/turkish\s*roll/i, /\bTR\b/i, /\broll\b/i, /\bturkish\b/i] },
+  { key: 'foc', patterns: [/focaccia/i, /\bfoc\b/i] },
+  { key: 'white', patterns: [/\bwhite\b/i] },
+  { key: 'wm', patterns: [/wholemeal/i, /whole\s*meal/i, /\bWM\b/] },
+  { key: 'mg', patterns: [/multi\s*[-]?\s*grain/i, /multigrain/i, /\bMG\b/] },
+  { key: 'pan', patterns: [/panini/i, /\bpan\b/i] },
+  { key: 'bag', patterns: [/baguette/i, /\bbag\b/i] },
+];
+
+function parseInventory() {
+  const text = document.getElementById('pasteInput').value.trim();
+  if (!text) return;
+
+  // Try to match each alias + number
+  const found = {};
+  for (const alias of ALIASES) {
+    for (const pat of alias.patterns) {
+      // Match pattern followed by optional separator and number
+      const regex = new RegExp(pat.source + '[\\s:=]*([0-9]+)', pat.flags);
+      const m = text.match(regex);
+      if (m && !found[alias.key]) {
+        found[alias.key] = parseInt(m[1]);
+        break;
+      }
+      // Also try number before pattern
+      const regex2 = new RegExp('([0-9]+)[\\s]*' + pat.source, pat.flags);
+      const m2 = text.match(regex2);
+      if (m2 && !found[alias.key]) {
+        found[alias.key] = parseInt(m2[1]);
+        break;
+      }
+    }
+  }
+
+  // Fill in the form
+  const idMap = { tr: 'stock_tr', foc: 'stock_foc', white: 'stock_white', wm: 'stock_wm', mg: 'stock_mg', pan: 'stock_pan', bag: 'stock_bag' };
+  let count = 0;
+  for (const [key, val] of Object.entries(found)) {
+    document.getElementById(idMap[key]).value = val;
+    count++;
+  }
+
+  if (count > 0) {
+    document.getElementById('pasteInput').value = '';
+    alert(`已识别 ${count} 个产品的库存`);
+  } else {
+    alert('未能识别任何产品，请检查格式');
+  }
+}
+
+// ============================================================
+// CORE CALCULATION
+// ============================================================
+function getStock() {
+  return {
+    tr: parseInt(document.getElementById('stock_tr').value) || 0,
+    foc: parseInt(document.getElementById('stock_foc').value) || 0,
+    white: parseInt(document.getElementById('stock_white').value) || 0,
+    wm: parseInt(document.getElementById('stock_wm').value) || 0,
+    mg: parseInt(document.getElementById('stock_mg').value) || 0,
+    pan: parseInt(document.getElementById('stock_pan').value) || 0,
+    bag: parseInt(document.getElementById('stock_bag').value) || 0,
+  };
+}
+
+function findNextDeliveryDay(deliveryDays, afterDay) {
+  // Find the next delivery day strictly after afterDay
+  for (let i = 1; i <= 7; i++) {
+    const d = (afterDay + i) % 7;
+    if (deliveryDays.includes(d)) return { day: d, gap: i };
+  }
+  return { day: afterDay, gap: 7 }; // fallback
+}
+
+function calcSupplierA(stock, tomorrow) {
+  const deliveryDays = [1, 2, 4, 6]; // Mon, Tue, Thu, Sat
+  const isDeliveryDay = deliveryDays.includes(tomorrow);
+
+  if (!isDeliveryDay) {
+    // No delivery tomorrow — check if stock is enough until next delivery
+    const next = findNextDeliveryDay(deliveryDays, tomorrow);
+    const needed = DAILY_USAGE.tr * next.gap;
+    const ok = stock.tr >= needed;
+    return {
+      supplier: 'A',
+      name: 'Supplier A — Turkish Roll',
+      isDeliveryDay: false,
+      nextDelivery: DAYS_CN[next.day],
+      daysUntilNext: next.gap,
+      needed: needed,
+      currentStock: stock.tr,
+      status: ok ? 'skip' : (stock.tr >= DAILY_USAGE.tr ? 'skip' : 'danger'),
+      message: ok ? `明天无送货，库存${stock.tr}个够用${next.gap}天` : `库存${stock.tr}个，需${needed}个到${DAYS_CN[next.day]}送货`,
+    };
+  }
+
+  const so = SO_A[tomorrow];
+  const soBags = so.tr;
+  const soRolls = soBags * 4;
+
+  // How many days does this delivery cover?
+  const next = findNextDeliveryDay(deliveryDays, tomorrow);
+  const daysToCover = next.gap;
+  const totalNeeded = DAILY_USAGE.tr * daysToCover;
+
+  // With standing order
+  const afterSO = stock.tr + soRolls;
+  const surplus = afterSO - totalNeeded;
+
+  let status, recommendation, recBags, action;
+
+  if (surplus >= SAFETY.tr && surplus <= totalNeeded * 0.5 + SAFETY.tr) {
+    // Standing order is fine
+    status = 'ok';
+    action = 'keep';
+    recBags = soBags;
+    recommendation = `Standing Order ${soBags}袋(${soRolls}个) OK`;
+  } else if (surplus > totalNeeded * 0.5 + SAFETY.tr) {
+    // Too much — reduce
+    status = 'warn';
+    action = 'reduce';
+    const actualNeed = totalNeeded + SAFETY.tr - stock.tr;
+    if (actualNeed <= 0) {
+      recBags = 0;
+      recommendation = `库存充足(${stock.tr}个)，建议跳过此次送货`;
+      action = 'skip';
+    } else {
+      recBags = Math.max(Math.ceil(actualNeed / 4), MIN_ORDER.A.value);
+      recommendation = `库存较多，建议减为${recBags}袋(${recBags*4}个)`;
+    }
+  } else {
+    // Not enough — increase
+    status = surplus < 0 ? 'danger' : 'warn';
+    action = 'increase';
+    const actualNeed = totalNeeded + SAFETY.tr - stock.tr;
+    recBags = Math.max(Math.ceil(actualNeed / 4), MIN_ORDER.A.value);
+    recommendation = `库存不足，建议增至${recBags}袋(${recBags*4}个)`;
+  }
+
+  return {
+    supplier: 'A',
+    name: 'Supplier A — Turkish Roll',
+    isDeliveryDay: true,
+    deliveryDay: DAYS_CN[tomorrow],
+    daysToCover,
+    currentStock: stock.tr,
+    totalNeeded,
+    soBags,
+    soRolls,
+    recBags,
+    recRolls: recBags * 4,
+    cost: recBags * PRICES.tr_bag,
+    status,
+    action,
+    recommendation,
+  };
+}
+
+function calcSupplierB(stock, tomorrow) {
+  const deliveryDays = [1, 3, 5]; // Mon, Wed, Fri
+  const isDeliveryDay = deliveryDays.includes(tomorrow);
+  const products = ['foc', 'white', 'wm', 'mg'];
+
+  if (!isDeliveryDay) {
+    const next = findNextDeliveryDay(deliveryDays, tomorrow);
+    let allOk = true;
+    for (const p of products) {
+      if (stock[p] < DAILY_USAGE[p] * next.gap) allOk = false;
+    }
+    return {
+      supplier: 'B',
+      name: 'Supplier B (YVE) — Focaccia & Bread',
+      isDeliveryDay: false,
+      nextDelivery: DAYS_CN[next.day],
+      daysUntilNext: next.gap,
+      currentStock: { foc: stock.foc, white: stock.white, wm: stock.wm, mg: stock.mg },
+      status: allOk ? 'skip' : 'danger',
+      message: allOk ? `明天无送货，库存够用到${DAYS_CN[next.day]}` : `库存可能不足，下次送货${DAYS_CN[next.day]}`,
+    };
+  }
+
+  const so = SO_B[tomorrow];
+  const next = findNextDeliveryDay(deliveryDays, tomorrow);
+  const daysToCover = next.gap;
+
+  let recOrder = {};
+  let status = 'ok';
+  let action = 'keep';
+  let changes = [];
+
+  for (const p of products) {
+    const soQty = so[p] || 0;
+    const needed = Math.ceil(DAILY_USAGE[p] * daysToCover);
+    const afterSO = stock[p] + soQty;
+    const actualNeed = needed + SAFETY[p] - stock[p];
+
+    if (actualNeed <= 0) {
+      recOrder[p] = 0;
+      if (soQty > 0) changes.push({ product: p, from: soQty, to: 0, reason: '库存充足' });
+    } else if (afterSO >= needed && afterSO <= needed + SAFETY[p] + needed * 0.5) {
+      recOrder[p] = soQty; // SO is fine
+    } else if (afterSO > needed + SAFETY[p] + needed * 0.5) {
+      recOrder[p] = Math.max(0, Math.ceil(actualNeed));
+      if (recOrder[p] !== soQty) changes.push({ product: p, from: soQty, to: recOrder[p], reason: '库存较多' });
+    } else {
+      recOrder[p] = Math.ceil(actualNeed);
+      if (recOrder[p] !== soQty) changes.push({ product: p, from: soQty, to: recOrder[p], reason: '库存不足' });
+      status = afterSO < needed ? 'danger' : 'warn';
+    }
+  }
+
+  // Check minimum order value
+  let totalValue = (recOrder.foc || 0) * PRICES.foc + (recOrder.white || 0) * PRICES.white +
+                   (recOrder.wm || 0) * PRICES.wm + (recOrder.mg || 0) * PRICES.mg;
+
+  // If below minimum and we have any items, pad with cheapest (focaccia)
+  if (totalValue > 0 && totalValue < MIN_ORDER.B.value) {
+    const deficit = MIN_ORDER.B.value - totalValue;
+    const extraFoc = Math.ceil(deficit / PRICES.foc);
+    recOrder.foc = (recOrder.foc || 0) + extraFoc;
+    totalValue = (recOrder.foc || 0) * PRICES.foc + (recOrder.white || 0) * PRICES.white +
+                 (recOrder.wm || 0) * PRICES.wm + (recOrder.mg || 0) * PRICES.mg;
+    // Check if foc changed from SO
+    if (recOrder.foc !== (so.foc || 0)) {
+      const existing = changes.find(c => c.product === 'foc');
+      if (existing) existing.to = recOrder.foc;
+      else changes.push({ product: 'foc', from: so.foc || 0, to: recOrder.foc, reason: '凑最低起订' });
+    }
+  }
+
+  if (changes.length > 0) { action = 'modify'; if (status === 'ok') status = 'warn'; }
+  // Check if all items are 0 (skip entirely)
+  if (Object.values(recOrder).every(v => v === 0)) {
+    action = 'skip';
+    status = 'warn';
+  }
+
+  const soValue = (so.foc || 0) * PRICES.foc + (so.white || 0) * PRICES.white +
+                  (so.wm || 0) * PRICES.wm + (so.mg || 0) * PRICES.mg;
+
+  return {
+    supplier: 'B',
+    name: 'Supplier B (YVE) — Focaccia & Bread',
+    isDeliveryDay: true,
+    deliveryDay: DAYS_CN[tomorrow],
+    daysToCover,
+    currentStock: { foc: stock.foc, white: stock.white, wm: stock.wm, mg: stock.mg },
+    so,
+    recOrder,
+    soValue,
+    recValue: totalValue,
+    status,
+    action,
+    changes,
+  };
+}
+
+function calcSupplierC(stock, tomorrow) {
+  const deliveryDays = [1, 3, 5]; // Mon, Wed, Fri
+  const isDeliveryDay = deliveryDays.includes(tomorrow);
+  const products = ['pan', 'bag'];
+
+  if (!isDeliveryDay) {
+    const next = findNextDeliveryDay(deliveryDays, tomorrow);
+    let allOk = true;
+    for (const p of products) {
+      if (stock[p] < DAILY_USAGE[p] * next.gap) allOk = false;
+    }
+    return {
+      supplier: 'C',
+      name: 'Supplier C — Panini & Baguette',
+      isDeliveryDay: false,
+      nextDelivery: DAYS_CN[next.day],
+      daysUntilNext: next.gap,
+      currentStock: { pan: stock.pan, bag: stock.bag },
+      status: allOk ? 'skip' : 'danger',
+      message: allOk ? `明天无送货，库存够用到${DAYS_CN[next.day]}` : `库存可能不足，下次送货${DAYS_CN[next.day]}`,
+    };
+  }
+
+  const so = SO_C[tomorrow];
+  const next = findNextDeliveryDay(deliveryDays, tomorrow);
+  const daysToCover = next.gap;
+
+  let recOrder = {};
+  let status = 'ok';
+  let action = 'keep';
+  let changes = [];
+
+  for (const p of products) {
+    const soQty = so[p] || 0;
+    const needed = Math.ceil(DAILY_USAGE[p] * daysToCover);
+    const afterSO = stock[p] + soQty;
+    const actualNeed = needed + SAFETY[p] - stock[p];
+
+    if (actualNeed <= 0) {
+      recOrder[p] = 0;
+      if (soQty > 0) changes.push({ product: p, from: soQty, to: 0, reason: '库存充足' });
+    } else if (afterSO >= needed && afterSO <= needed + SAFETY[p] + needed * 0.5) {
+      recOrder[p] = soQty;
+    } else if (afterSO > needed + SAFETY[p] + needed * 0.5) {
+      recOrder[p] = Math.max(0, Math.ceil(actualNeed));
+      if (recOrder[p] !== soQty) changes.push({ product: p, from: soQty, to: recOrder[p], reason: '库存较多' });
+    } else {
+      recOrder[p] = Math.ceil(actualNeed);
+      if (recOrder[p] !== soQty) changes.push({ product: p, from: soQty, to: recOrder[p], reason: '库存不足' });
+      status = afterSO < needed ? 'danger' : 'warn';
+    }
+  }
+
+  let totalValue = (recOrder.pan || 0) * PRICES.pan + (recOrder.bag || 0) * PRICES.bag;
+
+  // Check minimum order
+  if (totalValue > 0 && totalValue < MIN_ORDER.C.value) {
+    const deficit = MIN_ORDER.C.value - totalValue;
+    const extraBag = Math.ceil(deficit / PRICES.bag);
+    recOrder.bag = (recOrder.bag || 0) + extraBag;
+    totalValue = (recOrder.pan || 0) * PRICES.pan + (recOrder.bag || 0) * PRICES.bag;
+    const existing = changes.find(c => c.product === 'bag');
+    if (existing) existing.to = recOrder.bag;
+    else changes.push({ product: 'bag', from: so.bag || 0, to: recOrder.bag, reason: '凑最低起订' });
+  }
+
+  if (changes.length > 0) { action = 'modify'; if (status === 'ok') status = 'warn'; }
+  if (Object.values(recOrder).every(v => v === 0)) {
+    action = 'skip';
+    status = 'warn';
+  }
+
+  const soValue = (so.pan || 0) * PRICES.pan + (so.bag || 0) * PRICES.bag;
+
+  return {
+    supplier: 'C',
+    name: 'Supplier C — Panini & Baguette',
+    isDeliveryDay: true,
+    deliveryDay: DAYS_CN[tomorrow],
+    daysToCover,
+    currentStock: { pan: stock.pan, bag: stock.bag },
+    so,
+    recOrder,
+    soValue,
+    recValue: totalValue,
+    status,
+    action,
+    changes,
+  };
+}
+
+function checkEmergency(stock, tomorrow) {
+  // Supplier D: emergency for white, wm, mg
+  const products = ['white', 'wm', 'mg'];
+  const bDeliveryDays = [1, 3, 5];
+  const bDelivers = bDeliveryDays.includes(tomorrow);
+
+  if (bDelivers) return null; // B delivers tomorrow, no need for emergency
+
+  const next = findNextDeliveryDay(bDeliveryDays, tomorrow);
+  const alerts = [];
+
+  for (const p of products) {
+    const needed = DAILY_USAGE[p] * next.gap;
+    if (stock[p] < needed) {
+      const deficit = Math.ceil(needed - stock[p]);
+      alerts.push({ product: p, deficit, stock: stock[p], needed });
+    }
+  }
+
+  if (alerts.length === 0) return null;
+
+  // Supplier D: min 2, max 4
+  let totalNeeded = alerts.reduce((sum, a) => sum + a.deficit, 0);
+  totalNeeded = Math.max(2, Math.min(4, totalNeeded));
+
+  return {
+    supplier: 'D',
+    name: 'Supplier D — 应急采购',
+    alerts,
+    recommendedTotal: totalNeeded,
+  };
+}
+
+function checkSubstitution(stock, resultA, resultB, tomorrow) {
+  const subs = [];
+  const bDelivers = [1,3,5].includes(tomorrow);
+  const aDelivers = [1,2,4,6].includes(tomorrow);
+
+  // Estimate tomorrow's available stock (current + incoming deliveries)
+  const incomingFoc = bDelivers ? (SO_B[tomorrow]?.foc || 0) : 0;
+  const incomingTR = aDelivers ? ((SO_A[tomorrow]?.tr || 0) * 4) : 0;
+  const availFoc = stock.foc + incomingFoc;
+  const availTR = stock.tr + incomingTR;
+
+  // Check if TR is short
+  if (stock.tr < DAILY_USAGE.tr && !aDelivers) {
+    const shortage = DAILY_USAGE.tr - stock.tr;
+    if (availFoc > DAILY_USAGE.foc * (bDelivers ? resultB.daysToCover || 1 : 1)) {
+      subs.push(`Turkish Roll 明天库存不足（有${stock.tr}个，需${DAILY_USAGE.tr}个），可用 Focaccia 替代约${shortage}个`);
+    }
+  }
+  if (resultA.isDeliveryDay && resultA.status === 'danger') {
+    if (availFoc > DAILY_USAGE.foc + SAFETY.foc) {
+      subs.push('Turkish Roll 库存不足，可临时用 Focaccia 替代');
+    }
+  }
+
+  // Check if Foc is short
+  if (stock.foc < DAILY_USAGE.foc && !bDelivers) {
+    const shortage = DAILY_USAGE.foc - stock.foc;
+    if (availTR > DAILY_USAGE.tr) {
+      subs.push(`Focaccia 明天库存不足（有${stock.foc}个，需${DAILY_USAGE.foc}个），可用 Turkish Roll 替代约${shortage}个`);
+    }
+  }
+  if (resultB.isDeliveryDay && resultB.status === 'danger') {
+    if (availTR > DAILY_USAGE.tr + SAFETY.tr) {
+      subs.push('Focaccia 库存不足，可临时用 Turkish Roll 替代');
+    }
+  }
+
+  return subs;
+}
+
+// ============================================================
+// MESSAGE GENERATION
+// ============================================================
+function generateMessageA(result, deliveryDate) {
+  if (!result.isDeliveryDay || result.action === 'keep') return null;
+
+  const dayStr = `${DAYS_EN[deliveryDate.getDay()]}, ${deliveryDate.getDate()}/${deliveryDate.getMonth()+1}`;
+
+  if (result.action === 'skip') {
+    return `Hi,\n\nWe have enough Turkish Rolls in stock, so we won't need tomorrow's delivery (${dayStr}).\nPlease skip this one.\n\nThanks!`;
+  }
+
+  const soBags = result.soBags;
+  const recBags = result.recBags;
+  const action = recBags > soBags ? 'increase' : 'reduce';
+
+  return `Hi,\n\nCould we please adjust tomorrow's delivery (${dayStr}):\n\n- Turkish Roll: ${recBags} bags (${recBags * 4} rolls) — instead of the usual ${soBags} bags\n\nOrder total: $${result.cost.toFixed(2)}\n\nThanks!`;
+}
+
+function generateMessageB(result, deliveryDate) {
+  if (!result.isDeliveryDay || result.action === 'keep') return null;
+
+  const dayStr = `${DAYS_EN[deliveryDate.getDay()]}, ${deliveryDate.getDate()}/${deliveryDate.getMonth()+1}`;
+
+  if (result.action === 'skip') {
+    return `Hi,\n\nWe have enough stock, so we won't need tomorrow's delivery (${dayStr}).\nPlease skip this one.\n\nThanks!`;
+  }
+
+  const lines = [];
+  const so = result.so;
+  const rec = result.recOrder;
+  const items = [
+    { key: 'foc', label: 'Focaccia' },
+    { key: 'white', label: 'White' },
+    { key: 'wm', label: 'Wholemeal' },
+    { key: 'mg', label: 'Multi Grain' },
+  ];
+
+  for (const item of items) {
+    const soQty = so[item.key] || 0;
+    const recQty = rec[item.key] || 0;
+    if (recQty !== soQty) {
+      if (recQty === 0 && soQty > 0) {
+        lines.push(`- ${item.label}: 0 (skip)`);
+      } else {
+        lines.push(`- ${item.label}: ${recQty} — instead of the usual ${soQty}`);
+      }
+    } else if (recQty > 0) {
+      lines.push(`- ${item.label}: ${recQty}`);
+    }
+  }
+
+  return `Hi,\n\nCould we please adjust tomorrow's delivery (${dayStr}):\n\n${lines.join('\n')}\n\nOrder total: $${result.recValue.toFixed(2)}\n\nThanks!`;
+}
+
+function generateMessageC(result, deliveryDate) {
+  if (!result.isDeliveryDay || result.action === 'keep') return null;
+
+  const dayStr = `${DAYS_EN[deliveryDate.getDay()]}, ${deliveryDate.getDate()}/${deliveryDate.getMonth()+1}`;
+
+  if (result.action === 'skip') {
+    return `Hi,\n\nWe have enough stock, so we won't need tomorrow's delivery (${dayStr}).\nPlease skip this one.\n\nThanks!`;
+  }
+
+  const lines = [];
+  const so = result.so;
+  const rec = result.recOrder;
+  const items = [
+    { key: 'pan', label: 'Panini' },
+    { key: 'bag', label: 'Baguette' },
+  ];
+
+  for (const item of items) {
+    const soQty = so[item.key] || 0;
+    const recQty = rec[item.key] || 0;
+    if (recQty !== soQty) {
+      lines.push(`- ${item.label}: ${recQty} — instead of the usual ${soQty}`);
+    } else if (recQty > 0) {
+      lines.push(`- ${item.label}: ${recQty}`);
+    }
+  }
+
+  return `Hi,\n\nCould we please adjust tomorrow's delivery (${dayStr}):\n\n${lines.join('\n')}\n\nOrder total: $${result.recValue.toFixed(2)}\n\nThanks!`;
+}
+
+// ============================================================
+// UI RENDERING
+// ============================================================
+function renderSupplierCard(result) {
+  const statusClass = `status-${result.status}`;
+  const badgeClass = `badge-${result.status}`;
+  const badgeText = { ok: '✓ OK', warn: '⚠ 需调整', danger: '✗ 不足', skip: '— 无送货' }[result.status];
+
+  let details = '';
+
+  if (!result.isDeliveryDay) {
+    details = `<div class="order-details">
+      <span class="label">明天无送货</span>（下次: ${result.nextDelivery}，${result.daysUntilNext}天后）<br>
+      ${result.message || ''}
+    </div>`;
+  } else if (result.supplier === 'A') {
+    details = `<div class="order-details">
+      <span class="label">送货日:</span> ${result.deliveryDay}（覆盖${result.daysToCover}天）<br>
+      <span class="label">当前库存:</span> ${result.currentStock}个<br>
+      <span class="label">覆盖期需:</span> ${result.totalNeeded}个<br>
+      <span class="label">Standing Order:</span> ${result.soBags}袋(${result.soRolls}个) = $${(result.soBags * PRICES.tr_bag).toFixed(2)}<br>
+      <span class="label">建议:</span> <span class="${result.action === 'keep' ? 'ok-text' : 'highlight'}">${result.recommendation}</span>
+      ${result.action !== 'keep' ? `<br><span class="label">调整后金额:</span> $${result.cost.toFixed(2)}` : ''}
+    </div>`;
+  } else {
+    // Supplier B or C
+    const stockStr = Object.entries(result.currentStock).map(([k, v]) => `${PRODUCT_LABELS[k]} ${v}`).join(', ');
+    let orderStr = '';
+    if (result.action === 'keep') {
+      const soStr = Object.entries(result.so).filter(([k,v]) => v > 0).map(([k, v]) => `${PRODUCT_LABELS[k]} ${v}`).join(', ');
+      orderStr = `<span class="ok-text">Standing Order OK: ${soStr} = $${result.soValue.toFixed(2)}</span>`;
+    } else if (result.action === 'skip') {
+      orderStr = '<span class="highlight">建议跳过此次送货</span>';
+    } else {
+      const recStr = Object.entries(result.recOrder).filter(([k,v]) => v > 0).map(([k, v]) => `${PRODUCT_LABELS[k]} ${v}`).join(', ');
+      const changesStr = result.changes.map(c =>
+        `${PRODUCT_LABELS[c.product]}: ${c.from} → ${c.to} (${c.reason})`
+      ).join('<br>');
+      orderStr = `<span class="highlight">建议调整:</span><br>${changesStr}<br>调整后: ${recStr} = $${result.recValue.toFixed(2)}`;
+    }
+
+    details = `<div class="order-details">
+      <span class="label">送货日:</span> ${result.deliveryDay}（覆盖${result.daysToCover}天）<br>
+      <span class="label">当前库存:</span> ${stockStr}<br>
+      ${orderStr}
+    </div>`;
+  }
+
+  return `<div class="supplier-card ${statusClass}">
+    <div class="supplier-header">
+      <span class="supplier-name">${result.name}</span>
+      <span class="status-badge ${badgeClass}">${badgeText}</span>
+    </div>
+    ${details}
+  </div>`;
+}
+
+function renderMessage(title, text, id) {
+  return `<div class="msg-block">
+    <h3>${title}</h3>
+    <div class="msg-text" id="msg_${id}">${text}</div>
+    <button class="btn-copy" onclick="copyMsg('msg_${id}', this)">复制消息</button>
+  </div>`;
+}
+
+// ============================================================
+// MAIN CALCULATE
+// ============================================================
+function calculate() {
+  const stock = getStock();
+  const now = new Date();
+  const tomorrow = new Date(now);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const tomorrowDay = tomorrow.getDay(); // 0=Sun..6=Sat
+
+  const resultA = calcSupplierA(stock, tomorrowDay);
+  const resultB = calcSupplierB(stock, tomorrowDay);
+  const resultC = calcSupplierC(stock, tomorrowDay);
+  const emergency = checkEmergency(stock, tomorrowDay);
+  const substitutions = checkSubstitution(stock, resultA, resultB, tomorrowDay);
+
+  // Render results
+  let html = '';
+  html += renderSupplierCard(resultA);
+  html += renderSupplierCard(resultB);
+  html += renderSupplierCard(resultC);
+
+  if (emergency) {
+    html += `<div class="supplier-card status-danger">
+      <div class="supplier-header">
+        <span class="supplier-name">${emergency.name}</span>
+        <span class="status-badge badge-danger">需应急采购</span>
+      </div>
+      <div class="order-details">
+        ${emergency.alerts.map(a => `${PRODUCT_LABELS[a.product]}: 库存${a.stock}，需${a.needed}，缺${a.deficit}`).join('<br>')}
+        <br><span class="highlight">建议应急采购 ${emergency.recommendedTotal} 个</span>
+      </div>
+    </div>`;
+  }
+
+  if (substitutions.length > 0) {
+    html += `<div class="sub-alert">
+      <strong>替代建议：</strong><br>
+      ${substitutions.join('<br>')}
+    </div>`;
+  }
+
+  document.getElementById('resultsContent').innerHTML = html;
+  document.getElementById('results').style.display = 'block';
+
+  // Render messages
+  let msgHtml = '';
+  let hasMessages = false;
+
+  const msgA = generateMessageA(resultA, tomorrow);
+  if (msgA) { msgHtml += renderMessage('Supplier A — Turkish Roll', msgA, 'a'); hasMessages = true; }
+
+  const msgB = generateMessageB(resultB, tomorrow);
+  if (msgB) { msgHtml += renderMessage('Supplier B (YVE) — Focaccia & Bread', msgB, 'b'); hasMessages = true; }
+
+  const msgC = generateMessageC(resultC, tomorrow);
+  if (msgC) { msgHtml += renderMessage('Supplier C — Panini & Baguette', msgC, 'c'); hasMessages = true; }
+
+  if (!hasMessages) {
+    msgHtml = '<div class="no-changes">今天不需要通知任何供应商，Standing Order 保持不变 ✓</div>';
+  }
+
+  document.getElementById('messagesContent').innerHTML = msgHtml;
+  document.getElementById('messages').style.display = 'block';
+
+  // Scroll to results
+  document.getElementById('results').scrollIntoView({ behavior: 'smooth' });
+}
+
+// ============================================================
+// UTILITIES
+// ============================================================
+function toggleSO(el) {
+  el.classList.toggle('open');
+  document.getElementById('soContent').classList.toggle('show');
+}
+
+function copyMsg(id, btn) {
+  const text = document.getElementById(id).textContent;
+  navigator.clipboard.writeText(text).then(() => {
+    btn.textContent = '已复制 ✓';
+    btn.classList.add('copied');
+    setTimeout(() => { btn.textContent = '复制消息'; btn.classList.remove('copied'); }, 2000);
+  });
+}
+
+// Init date display
+(function() {
+  const now = new Date();
+  const tomorrow = new Date(now);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const todayStr = `${now.getFullYear()}/${now.getMonth()+1}/${now.getDate()} ${DAYS_CN[now.getDay()]}`;
+  const tomorrowStr = `${tomorrow.getMonth()+1}/${tomorrow.getDate()} ${DAYS_CN[tomorrow.getDay()]}`;
+
+  const tomorrowDay = tomorrow.getDay();
+  const aDelivers = [1,2,4,6].includes(tomorrowDay);
+  const bcDelivers = [1,3,5].includes(tomorrowDay);
+  let deliveryInfo = '明天送货: ';
+  if (aDelivers && bcDelivers) deliveryInfo += 'A + B(YVE) + C';
+  else if (aDelivers) deliveryInfo += 'A (Turkish Roll)';
+  else if (bcDelivers) deliveryInfo += 'B(YVE) + C';
+  else deliveryInfo += '无送货';
+
+  document.getElementById('dateDisplay').innerHTML =
+    `今天: ${todayStr} | 明天: ${tomorrowStr}<br><span style="color:#4a90d9">${deliveryInfo}</span>`;
+})();
+</script>
+
+</body>
+</html>
